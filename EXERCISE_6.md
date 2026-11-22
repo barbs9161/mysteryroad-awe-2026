@@ -1561,6 +1561,34 @@ Die fünf API-Endpunkte antworteten jeweils mit `HTTP 200`.
 
 Im Teil 1 der Demo 5 erledigt
 
+react-main.tsx
+↓
+createRoot(...).render(<App />)
+↓
+ReactApp.tsx: App
+↓
+useEffect(..., [])
+↓
+fetch() zu localhost:3001/api/...
+↓
+server/server.js
+↓
+public/data/*.json
+↓
+JSON-Antworten an React
+↓
+setData(nextData)
+↓
+React rendert App erneut
+↓
+RouteContent
+↓
+React Router entscheidet anhand der URL
+↓
+Passende View erhält Daten über Props
+↓
+Dashboard / Evidence / People / Locations / Timeline / Workspace
+
 **Questions** (depend on the tasks above)
 
 - [x] Walk through exactly what happens, in order, from the component mounting to the data actually being available to render: what does the effect do, when does it run, and what causes the component to re-render once the data arrives?
@@ -1661,20 +1689,160 @@ Auf Englisch:
 
 - [x] What's different about your component now compared to before (when data came from a static import/fetch of a local file). Specifically in terms of what state it needs to track that it didn't need before?
 
+Der wichtigste Unterschied ist, dass die Komponente jetzt den **Zustand des Netzwerkantrags** verfolgen muss.
+
+Bei einer statischen Datei war die Datenquelle lokal und normalerweise sehr schnell und zuverlässig. Beim Backend kann die Antwort dagegen verzögert sein oder fehlschlagen. Deshalb benötigt `App` zusätzlich zu den eigentlichen Daten diesen State:
+
+```tsx
+const [isLoading, setIsLoading] = useState(true);
+const [dataError, setDataError] = useState<string | null>(null);
+```
+
+### `isLoading`
+
+Dieser State zeigt, ob die Daten noch geladen werden:
+
+```tsx
+isLoading === true;
+```
+
+Währenddessen wird angezeigt:
+
+```text
+Loading case file...
+```
+
+Nach erfolgreichem Laden wird der State geändert:
+
+```tsx
+setIsLoading(false);
+```
+
+### `dataError`
+
+Dieser State speichert einen möglichen Fehler:
+
+```tsx
+setDataError(message);
+```
+
+Wenn zum Beispiel das Backend eine HTTP-500-Antwort zurückgibt, kann die Anwendung eine verständliche Fehlermeldung anzeigen, anstatt einfach leer zu bleiben.
+
+### Die eigentlichen Daten
+
+Die geladenen Daten werden weiterhin in diesem State gespeichert:
+
+```tsx
+const [data, setData] = useState<AppData>(...);
+```
+
+Der Unterschied besteht also nicht darin, dass die Daten komplett anders gespeichert werden. Neu beziehungsweise besonders wichtig ist, dass die Komponente zusätzlich den **Ladezustand** und den **Fehlerzustand** verwalten muss.
+
+Auf Englisch:
+
+> The main difference is that the component now has to track the lifecycle of a network request. In addition to the actual data state, it needs an `isLoading` state to show what happens while the backend request is pending, and an error state to store and display a failure such as an HTTP 500 response. With a local static data source, the response was usually immediate and predictable, so these states were less important or might not have been needed. The component still stores the loaded data in React state, but it now also has to represent loading and error conditions explicitly.
+
+In meinem aktuellen Code sind diese beiden States bereits vorhanden:
+
+```tsx
+const [isLoading, setIsLoading] = useState(true);
+const [dataError, setDataError] = useState<string | null>(null);
+```
+
 ---
 
 ## Demo 6 — Loading, error, and empty states
 
 **Tasks**
 
-- [ ] For at least one view, implement all three states explicitly: a loading indicator while the fetch is pending, a real error message if it fails (using your backend's on-demand error endpoint from Demo 4 to trigger it live), and a distinct "no data" empty state if the response is successful but contains nothing.
-- [ ] Make sure these three states are visually and structurally distinguishable from each other, not all three collapsing into "shows nothing."
+- [x] For at least one view, implement all three states explicitly: a loading indicator while the fetch is pending, a real error message if it fails (using your backend's on-demand error endpoint from Demo 4 to trigger it live), and a distinct "no data" empty state if the response is successful but contains nothing.
+
+What is needed:
+
+- A fetch request for a suitable view.
+- A state for loading, error, and data or separate React state variables.
+- Conditional JSX that renders only the matching state.
+- A way to call the normal endpoint and the Demo 4 error endpoint.
+- Styling that makes all states easily recognizable.
+- A test of every state:
+  - Normal endpoint with data → populated view
+  - Normal endpoint returning [] → no-data state
+  - Error endpoint → error state
+  - Pending request → loading state
+
+This should be implemented without changing unrelated views or removing any existing behavior. For example, in React, the component could track isLoading, error, and data, then render loading first, error second, empty third, and the normal content last.
+
+Demo 6 has been implemented for the Evidence Catalogue view.
+
+Added
+A loading spinner while evidence is being fetched.
+A real error state triggered with ?error=1.
+A distinct no-data state triggered with ?empty=1.
+Demo controls for loading, error, and empty responses.
+Distinct styling for all three states.
+The backend now supports empty array responses.
+State variables
+isLoading — distinguishes loading.
+dataError — distinguishes an error.
+evidenceItems — an empty array distinguishes successful but empty data
+
+- [x] Make sure these three states are visually and structurally distinguishable from each other, not all three collapsing into "shows nothing."
+
+Changes taken:
+
+EvidenceCatalogueView.tsx
+
+Added isLoading, dataError, and evidenceItems state variables.
+Added an evidence-fetch function with normal, error, and empty modes.
+Added three Demo 6 buttons:
+Load data
+Trigger error
+Load empty
+Added distinct displays for:
+Loading evidence
+Backend error
+Empty server response
+Filtered-no-results state
+Added a Try again button to the error state.
+server.js
+
+Added support for array-resource endpoints.
+Added ?empty=1 handling.
+For example, /api/evidence?empty=1 now returns HTTP 200 with [].
+The existing ?error=1 behavior remains responsible for HTTP 500 responses.
+styles.css
+
+Added styling for the Demo 6 controls.
+Added an animated loading spinner and loading panel.
+Added visually distinct red error styling.
+Added separate yellow styling for empty and no-filter-results states.
+Disabled demo controls while a request is loading.
+EXERCISE_6.md
+
+Marked the Demo 6 implementation and testing checklist items as completed.
 
 **Questions** (depend on the tasks above)
 
-- [ ] Trigger your backend's error endpoint live and show the error state appearing. What state variable(s) are you tracking to distinguish "loading," "error," and "loaded successfully but empty" from each other?
-- [ ] The original vanilla app had a bug where a failed fetch could leave a loading spinner stuck forever because the cleanup/hide-loading step was never called on the error path. Explain specifically how your React version's state management makes that particular mistake
-      harder to make (or show that it doesn't, and fix it).
+- [x] Trigger your backend's error endpoint live and show the error state appearing. What state variable(s) are you tracking to distinguish "loading," "error," and "loaded successfully but empty" from each other?
+
+Open /evidence and use the Demo 6 → Trigger error button. It calls:
+http://localhost:3001/api/evidence?error=1&delay=700
+
+The view then shows a red error panel. The Load empty button also returns [] and shows a separate yellow no-data panel.
+
+The tracked state variables are:
+
+- isLoading: true while the request is pending.
+- dataError: null normally, or contains the backend error message after failure.
+- evidenceItems: contains the evidence on success; [] means a successful response with no data.
+  The render order prevents them from being confused:
+
+if (isLoading) loading
+else if (dataError) error
+else if (evidenceItems.length === 0) no data
+else evidence cards
+
+- [x] The original vanilla app had a bug where a failed fetch could leave a loading spinner stuck forever because the cleanup/hide-loading step was never called on the error path. Explain specifically how your React version's state management makes that particular mistake harder to make (or show that it doesn't, and fix it).
 
 ---
 
@@ -1682,9 +1850,7 @@ Auf Englisch:
 
 **Tasks**
 
-- [ ] Using your backend's artificial-delay control, construct a request race: trigger a request, then trigger another one (for the same data) before the first resolves, and observe
-      what happens if you do nothing special about it. Does the UI ever show a result from the
-      _older_ request after a newer one already resolved?
+- [ ] Using your backend's artificial-delay control, construct a request race: trigger a request, then trigger another one (for the same data) before the first resolves, and observe what happens if you do nothing special about it. Does the UI ever show a result from the _older_ request after a newer one already resolved?
 - [ ] Fix it using `AbortController` (or a request-id/"ignore stale response" guard, your choice), so the UI can never show a stale result.
 
 **Questions** (depend on the tasks above)

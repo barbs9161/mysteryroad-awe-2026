@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useState } from "react";
 import type { FormEvent } from "react";
 import { Panel } from "../../components/Panel.js";
 import { useBookmarks } from "../../contexts/BookmarkContext.js";
@@ -71,6 +71,9 @@ export function EvidenceCatalogueView({
   onSaveNote,
 }: EvidenceCatalogueViewProps) {
   const { bookmarks, onToggleBookmark } = useBookmarks();
+  const [evidenceItems, setEvidenceItems] = useState<Evidence[]>(evidence);
+  const [isLoading, setIsLoading] = useState(true);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [filters, dispatchFilters] = useReducer(
     evidenceFiltersReducer,
     initialEvidenceFilters,
@@ -84,11 +87,57 @@ export function EvidenceCatalogueView({
     setNoteDraft(selectedEvidenceId ? (notes[selectedEvidenceId] ?? "") : "");
   }, [notes, selectedEvidenceId]);
 
-  const types = [...new Set(evidence.map((item) => item.type.toLowerCase()))];
+  const loadEvidence = useCallback(async (mode: "normal" | "error" | "empty") => {
+    setIsLoading(true);
+    setDataError(null);
+    setSelectedEvidenceId(null);
+
+    const parameters = new URLSearchParams({ delay: "700" });
+    if (mode === "error") parameters.set("error", "1");
+    if (mode === "empty") parameters.set("empty", "1");
+
+    try {
+      const response = await fetch(
+        `http://localhost:3001/api/evidence?${parameters.toString()}`,
+      );
+      const payload = (await response.json()) as Evidence[] | { error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          !Array.isArray(payload) && payload.error
+            ? payload.error
+            : "The evidence data could not be loaded.",
+        );
+      }
+
+      if (!Array.isArray(payload)) {
+        throw new Error("The evidence endpoint returned invalid data.");
+      }
+
+      setEvidenceItems(payload);
+    } catch (error) {
+      setEvidenceItems([]);
+      setDataError(
+        error instanceof Error
+          ? error.message
+          : "The evidence data could not be loaded.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadEvidence("normal");
+  }, [loadEvidence]);
+
+  const types = [
+    ...new Set(evidenceItems.map((item) => item.type.toLowerCase())),
+  ];
   const selectedPerson = people.find(
     (person) => person.id === filters.personFilter,
   );
-  const filteredEvidence = evidence
+  const filteredEvidence = evidenceItems
     .filter((item) => {
       const searchTerm = filters.search.trim().toLowerCase();
       const haystack =
@@ -117,7 +166,7 @@ export function EvidenceCatalogueView({
       return filters.sort === "date-asc" ? dateDifference : -dateDifference;
     });
 
-  const selectedEvidence = evidence.find(
+  const selectedEvidence = evidenceItems.find(
     (item) => item.id === selectedEvidenceId,
   );
 
@@ -139,6 +188,34 @@ export function EvidenceCatalogueView({
     <main className="app-main react-route-content">
       <section className="react-view" aria-labelledby="evidence-title">
         <h2 id="evidence-title">Evidence Catalogue</h2>
+
+        <div className="demo-state-controls" aria-label="Demo 6 state controls">
+          <span>Demo 6:</span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadEvidence("normal")}
+            disabled={isLoading}
+          >
+            Load data
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadEvidence("error")}
+            disabled={isLoading}
+          >
+            Trigger error
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadEvidence("empty")}
+            disabled={isLoading}
+          >
+            Load empty
+          </button>
+        </div>
 
         <div className="toolbar" aria-label="Evidence filters">
           <div className="toolbar-row">
@@ -272,8 +349,33 @@ export function EvidenceCatalogueView({
         </div>
 
         <Panel title="Evidence items">
-          {filteredEvidence.length === 0 ? (
-            <p>No evidence matches the current filters.</p>
+          {isLoading ? (
+            <div className="fetch-state fetch-state-loading" role="status">
+              <span className="spinner" aria-hidden="true" />
+              <strong>Loading evidence...</strong>
+            </div>
+          ) : dataError ? (
+            <div className="fetch-state fetch-state-error" role="alert">
+              <strong>Could not load evidence</strong>
+              <p>{dataError}</p>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void loadEvidence("normal")}
+              >
+                Try again
+              </button>
+            </div>
+          ) : evidenceItems.length === 0 ? (
+            <div className="fetch-state fetch-state-empty">
+              <strong>No evidence available</strong>
+              <p>The server returned successfully, but the evidence list is empty.</p>
+            </div>
+          ) : filteredEvidence.length === 0 ? (
+            <div className="fetch-state fetch-state-filter-empty">
+              <strong>No matching evidence</strong>
+              <p>No evidence matches the current filters.</p>
+            </div>
           ) : (
             <div className="evidence-grid">
               {filteredEvidence.map((item) => (

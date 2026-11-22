@@ -17,6 +17,12 @@ const resources = {
   "/api/locations": "locations.json",
   "/api/timeline": "timeline.json",
 };
+const arrayResources = new Set([
+  "/api/evidence",
+  "/api/people",
+  "/api/locations",
+  "/api/timeline",
+]);
 
 function getDelay(requestUrl) {
   const requestedDelay = Number(requestUrl.searchParams.get("delay") ?? "0");
@@ -64,6 +70,14 @@ const server = createServer(async (request, response) => {
     sendJson(response, 500, {
       error: "Simulated server error for Exercise 6 testing.",
     });
+    return;
+  }
+
+  if (
+    requestUrl.searchParams.get("empty") === "1" &&
+    arrayResources.has(requestUrl.pathname)
+  ) {
+    sendJson(response, 200, []);
     return;
   }
 
