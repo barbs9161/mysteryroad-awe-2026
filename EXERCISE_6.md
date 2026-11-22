@@ -1817,9 +1817,6 @@ Added an animated loading spinner and loading panel.
 Added visually distinct red error styling.
 Added separate yellow styling for empty and no-filter-results states.
 Disabled demo controls while a request is loading.
-EXERCISE_6.md
-
-Marked the Demo 6 implementation and testing checklist items as completed.
 
 **Questions** (depend on the tasks above)
 
@@ -1844,13 +1841,215 @@ else evidence cards
 
 - [x] The original vanilla app had a bug where a failed fetch could leave a loading spinner stuck forever because the cleanup/hide-loading step was never called on the error path. Explain specifically how your React version's state management makes that particular mistake harder to make (or show that it doesn't, and fix it).
 
+React makes the bug harder because loading is a state value, not a manually manipulated DOM spinner.
+
+In the Evidence Catalogue:
+
+isLoading starts as true.
+The fetch sets dataError when it fails.
+finally always executes and calls setIsLoading(false), whether the fetch succeeds or fails.
+The JSX then automatically switches from the loading panel to either the error panel or the loaded content.
+This is implemented in EvidenceCatalogueView.tsx:
+
+try {
+// Fetch evidence
+setEvidenceItems(payload);
+} catch (error) {
+setDataError(error.message);
+} finally {
+setIsLoading(false);
+}
+
+The app-level fetch also uses finally to stop loading and cannot leave the spinner state behind when an endpoint fails:
+
+finally {
+setIsLoading(false);
+}
+
+This is in ReactApp.tsx.
+
+React does not require developers to manually show or hide a spinner element in each success and error branch. The loading state is stored in isLoading, while dataError stores failures and evidenceItems stores successful data. The Evidence Catalogue sets isLoading to false in a finally block, so it executes after both successful and failed requests. The conditional render then automatically replaces the loading UI with either the error UI or the data/empty UI. This prevents the spinner from remaining stuck and makes success and failure cleanup centralized.
+
 ---
 
 ## Demo 7 — Request races & cancellation
 
+Switch between commits:
+git log --oneline
+
+Exercise 6 Demo 7
+Exercise 6 Demo 6 7e9060c
+Exercise 6 Demo 5 c0990ca
+Exercise 6 Demo 4 75e355e
+Exercise 6 Demo 3 476eb46
+Exercise 6 Demo 2 a2f22d3
+Exercise 6 Demo 1 33ead09
+
+Swith to another commit (e.g., Demo 6):
+git switch --detach 7e9060c
+
+npm run dev
+npm run server
+
+git switch main
+
 **Tasks**
 
-- [ ] Using your backend's artificial-delay control, construct a request race: trigger a request, then trigger another one (for the same data) before the first resolves, and observe what happens if you do nothing special about it. Does the UI ever show a result from the _older_ request after a newer one already resolved?
+- [x] Using your backend's artificial-delay control, construct a request race: trigger a request, then trigger another one (for the same data) before the first resolves, and observe what happens if you do nothing special about it. Does the UI ever show a result from the _older_ request after a newer one already resolved?
+
+Für Demo 6, habe ich die Zustände isLoading, dataError und evidenceItems implementiert.
+
+Erkläre schnell was in Demo 6 implementiert wurde:
+
+####
+
+Schnelle Erklärung Demo 6:
+
+In Demo 6 habe ich für die Evidence Catalogue einen eigenen Fetch implementiert und dort mit isLoading, dataError und evidenceItems drei Zustände verwaltet. (EvidenceCatalogueView.tsx, Lines 74–76)
+
+Die Funktion loadEvidence setzt zunächst den Ladezustand, löscht einen vorherigen Fehler und ruft je nach Modus den normalen, Fehler- oder Empty-Endpunkt auf. (EvidenceCatalogueView.tsx, Lines 88–119)
+
+Die Demo-Buttons starten diese Modi über loadEvidence("normal"), loadEvidence("error") beziehungsweise loadEvidence("empty"). (EvidenceCatalogueView.tsx, Lines 200–225)
+
+Das Backend prüft die Parameter error=1 und empty=1; beim Empty-Modus sendet es bei einem erlaubten Array-Endpunkt HTTP 200 mit [], beim Error-Modus HTTP 500. (server.js, Lines 64–82)
+
+Die React-Komponente zeigt entsprechend Loading, einen Backend-Fehler oder eine No-Data-Meldung, und der finally-Block beendet den Ladezustand unabhängig vom Ergebnis. (EvidenceCatalogueView.tsx, Lines 352–381)
+
+Die drei Demo-Buttons lösen über Query-Parameter einen normalen Request, einen künstlichen HTTP-500-Fehler oder eine erfolgreiche leere Antwort aus. In Demo 7 untersuche ich nun, was passiert, wenn dieselbe Evidence-Anfrage mehrfach gestartet wird und die Antworten nicht in derselben Reihenfolge zurückkommen. Ich verwende dazu die künstlichen Verzögerungen des Backends und starte zuerst einen langsamen und danach einen schnelleren Request. Dadurch kann beobachtet werden, ob eine ältere Antwort eine bereits eingetroffene neuere Antwort im UI überschreibt.
+
+Für Demo 7, verwende ich dieselbe Funktionalität und erzeuge absichtlich gleichzeitige Anfragen.
+Daduch kann ich zeigen, dass die Antwort der langsameren, älteren Anfrage die neuere Antwort überschreiben kann.
+
+d.h. in der Evidence-Komponente, brauche ich:
+
+1. eine Funktion, die denselben Evidence-Endpunkt mehrfach aufrufen kann
+2. Unterschiedliche Verzögerungen über den Query-Parameter delay
+3. Aktuell werden meine Buttons während eines laufenden Requests mit disabled={isLoading} gesperrt. Für einen echten Request-Race, muss ich sie vorübergehend entsperren.
+
+Erklärung Demo 7:
+
+Schritt 1: Race-fähige UI vorbereiten (entferne disabled={isLoading} aus den Load data, Trigger error und Load empty buttons) --> Danach kann ein neuer Request gestartet werden, während der erste noch läuft. Das ist notwendig, damit ich einen Request-Race demonstrieren kannst.
+
+Schritt 2: Individuelle Verzögerung pro Request ermöglichen
+
+1. Ich habe in loadEvidence die Funktionssignatur geändert --> async (mode: "normal" | "error" | "empty", delayMs = 700) => {
+2. Das Backend muss auch die gewünschte Verzögerung erhalten, in loadEvidence --> const parameters = new URLSearchParams({ delay: String(delayMs) });
+   Damit kann ich später Requests mit unterschiedlichen Verzögerungen starten, z.B.:
+   loadEvidence("normal", 5000)
+   loadEvidence("empty", 500)
+3. Zwei neue Buttons hinzugefügt: Race slow normal mit 3 Sekunde und Race fast empty mit halber Sekunde
+
+- Race slow normal startet einen normalen Evidence-Request mit 5000 ms Verzögerung.
+- Race fast empty startet sofort danach einen Empty-Request mit 500 ms Verzögerung.
+- Die schnelle, neuere Antwort sollte zuerst das No-Data-Panel anzeigen.
+- Danach endet die ältere, langsame Anfrage und kann normalerweise evidenceItems wieder mit Daten füllen.
+  Beide Requests verwenden denselben /api/evidence-Endpunkt. Durch Normal gegen Empty wird sichtbar, ob eine ältere Antwort das neuere Ergebnis überschreibt.
+
+4. Ich werde jetzt demonstrieren:
+
+- Ich klicke auf Race slow normal
+- Sofort danach auf Race fast empty
+- Es soll zuerst die leere Antwort erscheinen
+- Nach 2-3 Sekunden die ältere normale Antwort soll erscheinen
+- Die Evidence Daten sollen am Ende ersichtlich werden
+
+5. Zu erklären:
+   Die Antwort-Reihenfolge war:
+   Langsamer normaler Request startet mit delay=5000.
+   Schneller Empty-Request startet mit delay=500.
+   Nach ungefähr 500 ms liefert der Empty-Request [].
+   Die UI zeigt kurz No evidence available.
+   Nach weiteren 4500 ms liefert der ältere Normal-Request Evidence-Daten.
+   Da kein Schutz vorhanden ist, überschreibt setEvidenceItems(payload) anschließend [].
+   Am Ende wird wieder die Evidence-Liste angezeigt.
+
+###
+
+###
+
+Lange Erklärung Demo 6:
+
+EvidenceCatalogueView.tsx:
+import { useCallback, useEffect, useReducer, useState } from "react"; --> useCallback importiert, so dass ich in loadEvidence verwenden kann
+
+1. export function EvidenceCatalogueView({...}) --> const[evidenceItems ... ]--> das ist meine React-Komponentenfunktion die den gesamten Evidence-Katalog rendert.
+   Ich habe die drei States hinzugefügt:
+
+const [evidenceItems, setEvidenceItems] = useState<Evidence[]>(evidence); --> Speichert die aktuell geladenen Evidence-Daten. Initial wird der Wert aus der Prop evidence übernommen. setEvidenceItems(payload) ersetzt ihn nach einem erfolgreichen Fetch. Bei [] entsteht der No-Data-State.
+const [isLoading, setIsLoading] = useState(true); --> true: Ladeanzeige wird gezeigt. false: Loading endet. Der Initialwert ist true, damit beim ersten Laden sofort “Loading evidence” erscheint.
+const [dataError, setDataError] = useState<string | null>(null); --> null: kein Fehler vorhanden.
+
+Vorher erhielt die Komponente die Evidence bereits über die Prop evidence und verwendete sie direkt: const filteredEvidence = evidence.filter(...);
+Für Demo 6 brauchte die Komponente einen eigenen State, weil sie jetzt Daten selbst vom Backend lädt.
+
+Warum ist der Unterschied wichtig?
+mit der Prop evidence allein weiß die Komponente nur welche Evidence-Daten hat sie erhalten. Evidence ist die eingehende Prop
+Mit den States weiß sie zusätzlich: Lade ich gerade? ist ein Fehler aufgetreten? Habe ich erfolgreich keine Daten erhalten?
+
+2. const loadEvidence = useCallback(...) --> funktion geschrieben die einen Evidence-Fetch startet und verwaltet Loading, Error, und Empty-State
+
+Die gesamte Zustandslogik lautet:
+
+Loading: isLoading === true
+Error: isLoading === false und dataError != null
+Empty: isLoading === false, dataError === null und evidenceItems.length === 0
+Data: isLoading === false, dataError === null und evidenceItems.length > 0
+
+3. const filteredEvidece = evidenceItems geändert --> das ist jetzt der State
+4. const selectedEvidence = evidenceItems geändert --> das ist jetzt der State
+5. Beim return statement habe ich demo controls eingetragen --> button die steuern in welchem Modus das Laden ausgeführt werden soll
+6. Beim return statement habe ich im Panel ... folgendes eingetragen --> siehe unten:
+
+<Panel title="Evidence items"> erzeugt einen sichtbaren Rahmen mit dem Titel Evidence items.
+Der innere Teil entscheidet mit einer Reihenfolge von Bedingungen, welche Ansicht angezeigt wird:
+Loading
+↓ falls beendet
+Error
+↓ falls kein Fehler
+No evidence
+↓ falls Evidence vorhanden
+No matches
+↓ falls Filter keine Treffer liefern
+Evidence cards
+
+Wenn keine der vorherigen Bedingungen zutrifft, wird evidence-grid gerendert und alle gefilterten Evidence-Einträge werden als Karten angezeigt.
+
+Die Reihenfolge ist wichtig: Wenn isLoading noch true ist, darf kein Fehler oder leeres Ergebnis angezeigt werden. Deshalb steht Loading zuerst, danach Error und danach die Empty-States.
+
+In server.js:
+
+1. const arrayResources = newSet(...) --> const resources ... ordnent Pfade ihren JSON-Dateien zu (so dass der Server weißt welche .json Datei zu laden ist), und arrayResources merkt nur, welche dieser Ressourcen Arrays sind
+2. if (requestURL.searchParams...) --> requestUrl.searchParams.get("empty") === "1" Prüft, ob die URL diesen Parameter enthält: /api/evidence?empty=1
+   --> Prüft, ob der Pfad in arrayResources enthalten ist: ob es ein Array Ressource ist --> Beide Bedingungen müssen true sein: Dann wird HTTP 200 mit einem leeren Array zurückgegeben.
+
+styles.css:
+
+1. demo state controls
+2. fetch state
+
+Das Problem:
+
+Ich starte Request 1.
+Ich starte Request 2.
+Request 2 endet schneller.
+Request 2 setzt die Daten auf seinen Zustand.
+Danach endet Request 1.
+Request 1 setzt seine Daten und überschreibt damit das Ergebnis von Request 2.
+Das ist möglich, weil der Code nicht merkt, welcher Request der neueste ist.
+
+Wichtig für Demo 7
+Du sollst diesen Fehler zunächst ohne Schutz demonstrieren:
+
+Kein Request-ID-Vergleich.
+Keine AbortController-Abbruchlogik.
+Kein disabled-Wert, der einen neuen Request verhindert.
+Dann dokumentierst du:
+
+Welches Ergebnis zuerst erscheint.
+Ob der ältere Request später das UI überschreibt.
+Warum es passiert: Antworten werden in ihrer eigenen Reihenfolge ausgeführt, nicht in Startreihenfolge.
+Welche UI-Zustände dadurch inkonsistent werden können.
+
 - [ ] Fix it using `AbortController` (or a request-id/"ignore stale response" guard, your choice), so the UI can never show a stale result.
 
 **Questions** (depend on the tasks above)

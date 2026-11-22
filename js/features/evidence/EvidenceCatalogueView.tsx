@@ -87,45 +87,53 @@ export function EvidenceCatalogueView({
     setNoteDraft(selectedEvidenceId ? (notes[selectedEvidenceId] ?? "") : "");
   }, [notes, selectedEvidenceId]);
 
-  const loadEvidence = useCallback(async (mode: "normal" | "error" | "empty") => {
-    setIsLoading(true);
-    setDataError(null);
-    setSelectedEvidenceId(null);
+  const loadEvidence = useCallback(
+    async (mode: "normal" | "error" | "empty", delayMs = 700) => {
+      //Startzustaände werden gesetzt (Zeigt dass es am Laden ist, Fehler zurückgesetzt, schließt eine offene Evidence-Detailansicht)
+      setIsLoading(true);
+      setDataError(null);
+      setSelectedEvidenceId(null);
 
-    const parameters = new URLSearchParams({ delay: "700" });
-    if (mode === "error") parameters.set("error", "1");
-    if (mode === "empty") parameters.set("empty", "1");
+      //URLSearchParams wird verwendet, um die Abfrageparameter für die API-Anfrage zu erstellen
+      const parameters = new URLSearchParams({ delay: String(delayMs) });
+      if (mode === "error") parameters.set("error", "1");
+      if (mode === "empty") parameters.set("empty", "1");
 
-    try {
-      const response = await fetch(
-        `http://localhost:3001/api/evidence?${parameters.toString()}`,
-      );
-      const payload = (await response.json()) as Evidence[] | { error?: string };
+      //Erfolgreiche Antwort prüfen und die Daten in den Zustand setzen, Fehlerbehandlung durchführen
+      try {
+        const response = await fetch(
+          `http://localhost:3001/api/evidence?${parameters.toString()}`,
+        );
+        const payload = (await response.json()) as
+          Evidence[] | { error?: string };
 
-      if (!response.ok) {
-        throw new Error(
-          !Array.isArray(payload) && payload.error
-            ? payload.error
+        //Prüft, ob die Antwort erfolgreich war. Wenn nicht, wird ein Fehler ausgelöst.
+        if (!response.ok) {
+          throw new Error(
+            !Array.isArray(payload) && payload.error
+              ? payload.error
+              : "The evidence data could not be loaded.",
+          );
+        }
+
+        if (!Array.isArray(payload)) {
+          throw new Error("The evidence endpoint returned invalid data.");
+        }
+
+        setEvidenceItems(payload); // Setzt die geladenen Evidenzdaten in den State
+      } catch (error) {
+        setEvidenceItems([]);
+        setDataError(
+          error instanceof Error
+            ? error.message
             : "The evidence data could not be loaded.",
         );
+      } finally {
+        setIsLoading(false); //Laden immer beenden, unabhängig davon, ob die Anfrage erfolgreich war oder nicht
       }
-
-      if (!Array.isArray(payload)) {
-        throw new Error("The evidence endpoint returned invalid data.");
-      }
-
-      setEvidenceItems(payload);
-    } catch (error) {
-      setEvidenceItems([]);
-      setDataError(
-        error instanceof Error
-          ? error.message
-          : "The evidence data could not be loaded.",
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     void loadEvidence("normal");
@@ -195,7 +203,6 @@ export function EvidenceCatalogueView({
             type="button"
             className="btn btn-secondary"
             onClick={() => void loadEvidence("normal")}
-            disabled={isLoading}
           >
             Load data
           </button>
@@ -203,7 +210,6 @@ export function EvidenceCatalogueView({
             type="button"
             className="btn btn-secondary"
             onClick={() => void loadEvidence("error")}
-            disabled={isLoading}
           >
             Trigger error
           </button>
@@ -211,9 +217,23 @@ export function EvidenceCatalogueView({
             type="button"
             className="btn btn-secondary"
             onClick={() => void loadEvidence("empty")}
-            disabled={isLoading}
           >
             Load empty
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadEvidence("normal", 5000)}
+          >
+            Race: slow normal
+          </button>
+
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => void loadEvidence("empty", 500)}
+          >
+            Race: fast empty
           </button>
         </div>
 
@@ -369,7 +389,10 @@ export function EvidenceCatalogueView({
           ) : evidenceItems.length === 0 ? (
             <div className="fetch-state fetch-state-empty">
               <strong>No evidence available</strong>
-              <p>The server returned successfully, but the evidence list is empty.</p>
+              <p>
+                The server returned successfully, but the evidence list is
+                empty.
+              </p>
             </div>
           ) : filteredEvidence.length === 0 ? (
             <div className="fetch-state fetch-state-filter-empty">
