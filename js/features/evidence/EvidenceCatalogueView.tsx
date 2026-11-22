@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Panel } from "../../components/Panel.js";
 import { useBookmarks } from "../../contexts/BookmarkContext.js";
@@ -71,9 +71,12 @@ export function EvidenceCatalogueView({
   onSaveNote,
 }: EvidenceCatalogueViewProps) {
   const { bookmarks, onToggleBookmark } = useBookmarks();
+
   const [evidenceItems, setEvidenceItems] = useState<Evidence[]>(evidence);
   const [isLoading, setIsLoading] = useState(true);
   const [dataError, setDataError] = useState<string | null>(null);
+  const activeControllerRef = useRef<AbortController | null>(null);
+
   const [filters, dispatchFilters] = useReducer(
     evidenceFiltersReducer,
     initialEvidenceFilters,
@@ -89,6 +92,12 @@ export function EvidenceCatalogueView({
 
   const loadEvidence = useCallback(
     async (mode: "normal" | "error" | "empty", delayMs = 700) => {
+      //Der bisher aktive Request wird abgebrochen, um sicherzustellen, dass nur die aktuellste Anfrage verarbeitet wird. Dies verhindert, dass veraltete Daten den Zustand überschreiben.
+      //Ein neuer AbortController wird erstellt und in activeControllerRef gespeichert, um die Kontrolle über die neue Anfrage zu behalten.
+      activeControllerRef.current?.abort();
+      const controller = new AbortController();
+      activeControllerRef.current = controller;
+
       //Startzustaände werden gesetzt (Zeigt dass es am Laden ist, Fehler zurückgesetzt, schließt eine offene Evidence-Detailansicht)
       setIsLoading(true);
       setDataError(null);
@@ -103,6 +112,7 @@ export function EvidenceCatalogueView({
       try {
         const response = await fetch(
           `http://localhost:3001/api/evidence?${parameters.toString()}`,
+          { signal: controller.signal },
         );
         const payload = (await response.json()) as
           Evidence[] | { error?: string };
@@ -120,16 +130,25 @@ export function EvidenceCatalogueView({
           throw new Error("The evidence endpoint returned invalid data.");
         }
 
-        setEvidenceItems(payload); // Setzt die geladenen Evidenzdaten in den State
+        if (activeControllerRef.current === controller) {
+          setEvidenceItems(payload); // Setzt die geladenen Evidenzdaten in den State
+        }
       } catch (error) {
-        setEvidenceItems([]);
-        setDataError(
-          error instanceof Error
-            ? error.message
-            : "The evidence data could not be loaded.",
-        );
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+        if (activeControllerRef.current === controller) {
+          setEvidenceItems([]);
+          setDataError(
+            error instanceof Error
+              ? error.message
+              : "The evidence data could not be loaded.",
+          );
+        }
       } finally {
-        setIsLoading(false); //Laden immer beenden, unabhängig davon, ob die Anfrage erfolgreich war oder nicht
+        if (activeControllerRef.current === controller) {
+          setIsLoading(false); //Laden immer beenden, unabhängig davon, ob die Anfrage erfolgreich war oder nicht
+        }
       }
     },
     [],

@@ -1877,7 +1877,8 @@ React does not require developers to manually show or hide a spinner element in 
 Switch between commits:
 git log --oneline
 
-Exercise 6 Demo 7
+Exercise 6 Demo 7 Task 2
+Exercise 6 Demo 7 Task 1 2ddb0b8
 Exercise 6 Demo 6 7e9060c
 Exercise 6 Demo 5 c0990ca
 Exercise 6 Demo 4 75e355e
@@ -1926,7 +1927,7 @@ d.h. in der Evidence-Komponente, brauche ich:
 2. Unterschiedliche Verzögerungen über den Query-Parameter delay
 3. Aktuell werden meine Buttons während eines laufenden Requests mit disabled={isLoading} gesperrt. Für einen echten Request-Race, muss ich sie vorübergehend entsperren.
 
-Erklärung Demo 7:
+Erklärung Demo 7 (Task 1):
 
 Schritt 1: Race-fähige UI vorbereiten (entferne disabled={isLoading} aus den Load data, Trigger error und Load empty buttons) --> Danach kann ein neuer Request gestartet werden, während der erste noch läuft. Das ist notwendig, damit ich einen Request-Race demonstrieren kannst.
 
@@ -1947,6 +1948,12 @@ Schritt 2: Individuelle Verzögerung pro Request ermöglichen
 
 4. Ich werde jetzt demonstrieren:
 
+Switch to commit - Exercise 6 Demo 7 Task 1
+git switch --detach 2ddb0b8
+npm run dev
+npm run server
+git switch main
+
 - Ich klicke auf Race slow normal
 - Sofort danach auf Race fast empty
 - Es soll zuerst die leere Antwort erscheinen
@@ -1962,6 +1969,56 @@ Schritt 2: Individuelle Verzögerung pro Request ermöglichen
    Nach weiteren 4500 ms liefert der ältere Normal-Request Evidence-Daten.
    Da kein Schutz vorhanden ist, überschreibt setEvidenceItems(payload) anschließend [].
    Am Ende wird wieder die Evidence-Liste angezeigt.
+
+Erklärung Demo 7 (Task 2):
+
+Für Demo 7 Task 2 muss ich eine Schutzlogik implementieren:
+
+Schritt 1: Aktiven AbortController speichern --> import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+useRef speichert einen Wert über Re-Renders, ohne selbst einen erneuten Render auszulösen.
+
+Schritt 2: Füge direkt nach den drei Evidence-States eine Ref hinzu:
+const activeControllerRef = useRef<AbortController | null>(null); --> Diese Ref hält jeweils den Controller des zuletzt gestarteten Requests.
+Sie funktioniert ähnlich wie eine variable Referenz:
+activeControllerRef.current = controller;
+und später:
+activeControllerRef.current?.abort();
+
+Schritt 3: Vorherigen Requests abbrechen
+Am Anfang der Funktion loadEvidence = useCallback() ergänze folgendes:
+//Der bisher aktive Request wird abgebrochen, um sicherzustellen, dass nur die aktuellste Anfrage verarbeitet wird. Dies verhindert, dass veraltete Daten den Zustand überschreiben.
+//Ein neuer AbortController wird erstellt und in activeControllerRef gespeichert, um die Kontrolle über die neue Anfrage zu behalten.
+activeControllerRef.current?.abort();
+const controller = new AbortController();
+activeControllerRef.current = controller;
+
+Schritt 4: Controller mit fetch verbinden
+Den const response = await fetch(
+`http://localhost:3001/api/evidence?${parameters.toString()}`,
+);
+auf
+const response = await fetch(
+`http://localhost:3001/api/evidence?${parameters.toString()}`,
+{ signal: controller.signal },
+);
+geändert --> was hier passiert ist dass controller.abort() bricht den Request ab. controller.signal teilt dem fetch mit, welcher Request abgebrochen werden soll.
+Ohne { signal: ... } würde nur ein neues Controller-Objekt existieren, aber der Network-Request könnte nicht abgebrochen werden.
+
+Schritt 5: Abbruch-Fehler ignorieren -> ein abgebrochener Fetch könnte in den catch-Block gelangen und möglicherweise als echter Fehler angezeigt werden
+vor dem setEvidenceItems([]), folgendes setzten:
+if (error instanceof DOMException && error.name === "AbortError") {
+return;
+}
+Dadurch gilt:
+Ein echter Netzwerk- oder HTTP-Fehler bleibt sichtbar.
+Ein durch abort() ausgelöster Fehler zeigt keine Fehlermeldung.
+Der alte Request darf keine Daten oder einen Fehler in den UI-State setzen.
+
+Schritt 6: Nur die neuste Antwort darf den State ändern
+Geändert wurden:
+Erfolg: setEvidenceItems(payload) läuft nur für den aktiven Request.
+Fehler: setEvidenceItems([]) und setDataError(...) laufen nur für den aktiven Request.
+Ladeende: setIsLoading(false) läuft nur für den aktiven Request.
 
 ###
 
