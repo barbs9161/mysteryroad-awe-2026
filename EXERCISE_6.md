@@ -2020,6 +2020,28 @@ Erfolg: setEvidenceItems(payload) läuft nur für den aktiven Request.
 Fehler: setEvidenceItems([]) und setDataError(...) laufen nur für den aktiven Request.
 Ladeende: setIsLoading(false) läuft nur für den aktiven Request.
 
+Schritt 7: Beim Verlassen der Evidence Catalogue sollte der aktive Request abgebrochen werden
+ich habe einen separaten Cleanup - useEffect hinzugefügt:
+useEffect(() => {
+return () => {
+activeControllerRef.current?.abort();
+};
+}, []);
+
+Damit wird beim Unmount:
+
+Der noch laufende Fetch abgebrochen.
+Eine verspätete Antwort kann keine State-Änderung mehr auslösen.
+Die Komponente erzeugt keine unnötige React-Aktualisierung nach dem Verlassen.
+
+Demonstrieren:
+
+Switch to commit - Exercise 6 Demo 7 Task 2
+git switch --detach
+npm run dev
+npm run server
+git switch main
+
 ###
 
 ###

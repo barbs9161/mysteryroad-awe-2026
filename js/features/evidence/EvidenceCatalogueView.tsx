@@ -158,6 +158,12 @@ export function EvidenceCatalogueView({
     void loadEvidence("normal");
   }, [loadEvidence]);
 
+  useEffect(() => {
+    return () => {
+      activeControllerRef.current?.abort();
+    };
+  }, []);
+
   const types = [
     ...new Set(evidenceItems.map((item) => item.type.toLowerCase())),
   ];
